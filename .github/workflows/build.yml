@@ -1,0 +1,53 @@
+name: Build XenoVerse
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find the project (unzips it if you uploaded a .zip)
+        shell: bash
+        run: |
+          shopt -s nullglob
+          if [ -f build.gradle ]; then
+            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
+          else
+            for z in *.zip; do unzip -o -q "$z" -d _unzipped; done
+            found=$(find _unzipped -name build.gradle | head -n 1)
+            if [ -z "$found" ]; then
+              echo "No build.gradle found. Upload the XenoVerse ZIP to the repository root."
+              exit 1
+            fi
+            echo "PROJECT_DIR=$(dirname "$found")" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.2.1
+      - name: Build
+        shell: bash
+        run: |
+          cd "$PROJECT_DIR"
+          gradle build --no-daemon --stacktrace 2>&1 | tee build.log
+      - name: Collect JAR
+        shell: bash
+        run: |
+          cd "$PROJECT_DIR"
+          mkdir -p dist
+          jar=$(ls build/libs/*.jar | grep -v -e '-sources' -e '-dev' | head -n 1)
+          cp "$jar" dist/XenoVerse.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XenoVerse-jar
+          path: ${{ env.PROJECT_DIR }}/dist/XenoVerse.jar
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: ${{ env.PROJECT_DIR }}/build.log
+          if-no-files-found: ignore
